@@ -18,6 +18,7 @@ powershell -ExecutionPolicy Bypass -File tools\theme.ps1 -TvHost 192.168.1.50 th
 | `aurora/` | A dark aurora wallpaper (teal and violet on navy, darker at the bottom) with a matching background colour |
 | `dussehra/` | Festive skin for Dussehra (ends 21 Oct 2026): a marigold toran, a faint gold rangoli, a diya for Wi-Fi, a bell for Inputs, a marigold for Settings and a petal shower |
 | `six-columns/` | Six smaller tiles per row and one grid row visible under the dock |
+| `phosphor/` | Amber CRT monochrome: one phosphor colour, square corners, scan lines, and tiles that name the app instead of showing its artwork. Sets `animations` off, since a CRT changes selection instantly |
 
 ## Keys
 
@@ -47,6 +48,7 @@ is ignored, and a file that doesn't parse is ignored as a whole, so a theme can 
 | `advanced_effects` | bool | Optional lifted tile, icon zoom, smooth ambient colour and app opening effects; false by default |
 | `show_home_settings_shortcut` | bool | Keep the optional Default-home tile visible when the TV has a home picker; false by default |
 | `show_stats` | bool | One line under the clock with CPU, free memory and free storage. Off unless set |
+| `skin` | `default` or `phosphor` | The look: font, corners, colours, scan lines. See Skins below |
 | `background_color` | `#RRGGBB` | Colour behind everything; black by default |
 | `sky_intensity` | 0 to 100 | Time-of-day backdrop: a dark gradient that follows the clock, 0 hides it (default) |
 | `wallpaper` | bool | Show `wallpaper.jpg` from the theme folder (`true`), or ignore it (`false`) |
@@ -56,6 +58,27 @@ is ignored, and a file that doesn't parse is ignored as a whole, so a theme can 
 | `accent_color` | `#RRGGBB` | Colour of the focus glow while the festive skin is on; diya gold if not set |
 | `settings_key_keycodes` | list of keycodes | Remote buttons that open Settings, for `HomeKeyService` (TCL Google TV gear: `[83]`) |
 | `settings_key_panel` | bool | Those buttons open a small quick settings panel (TV settings, Display, Network, Apps, Launcher settings) instead of the TV's Settings |
+
+## Skins
+
+`background_color` and `wallpaper` only reach the backdrop. A skin reaches the rest: the font, the
+corner radius, every text colour, the pills, the dock band, the focus highlight and the app artwork.
+Those live in the APK, so a skin is written in `Skin.java` and applied in code at start rather than
+being data in the JSON; the theme only picks one by name, and switching is still a push and never a
+rebuild.
+
+| Skin | What it looks like |
+|---|---|
+| `default` | The built-in tvOS style look: Outfit, 16dp corners, white glass highlight, app artwork in colour |
+| `phosphor` | Amber CRT monochrome. VT323 (SIL OFL, in `res/font/`), square corners, scan lines and a vignette over everything, the ambient glow pinned to amber instead of sampled from the artwork, and tiles that drop the app artwork for the app's name, the focused one inverting to solid amber rather than taking the floating glass highlight |
+
+Writing another one means adding a static factory to `Skin.java` and a name to `Skin.of`; a field
+left at 0 keeps whatever `activity_main.xml` and the drawables already say, so a skin only has to
+state what it changes.
+
+Note for non-Latin locales: a skin's font is used for the launcher's own text, and Android falls back
+to a system font for characters the font lacks. The Japanese date under `phosphor` renders in the
+fallback face rather than in VT323.
 
 ## Wallpapers
 
