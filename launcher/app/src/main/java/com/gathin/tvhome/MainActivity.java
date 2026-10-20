@@ -1085,10 +1085,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         TextView ampm = findViewById(R.id.ampm);
         TextView date = findViewById(R.id.date);
         View divider = findViewById(R.id.divider);
-        TextView[] pills = {findViewById(R.id.btnInputs), findViewById(R.id.btnWifi), findViewById(R.id.btnSettings)};
+        TextView stats = findViewById(R.id.stats);
+        TextView[] pills = {findViewById(R.id.btnInputs), findViewById(R.id.btnWifi),
+                findViewById(R.id.btnReorder), findViewById(R.id.btnSettings)};
 
         if (font != null) {
-            for (TextView t : new TextView[]{greeting, clock, ampm, date, heroName, shamsiDate}) t.setTypeface(font);
+            for (TextView t : new TextView[]{greeting, clock, ampm, date, heroName, shamsiDate, stats}) t.setTypeface(font);
             for (TextView t : pills) t.setTypeface(font);
         }
         if (skin.greetingColor != 0) greeting.setTextColor(skin.greetingColor);
@@ -1098,6 +1100,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             date.setTextColor(skin.dateColor);
             shamsiDate.setTextColor(skin.dateColor);
         }
+        if (skin.dateColor != 0) stats.setTextColor(skin.dateColor);
         if (skin.dividerColor != 0) divider.setBackgroundColor(skin.dividerColor);
         if (skin.heroColor != 0) heroName.setTextColor(skin.heroColor);
 
