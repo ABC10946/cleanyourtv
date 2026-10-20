@@ -11,6 +11,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.ApplicationInfo;
+import android.content.res.ColorStateList;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -20,7 +21,11 @@ import android.graphics.Rect;
 import android.graphics.Shader;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.ColorDrawable;
+import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.LayerDrawable;
+import android.graphics.drawable.StateListDrawable;
 import android.media.tv.TvContract;
 import android.media.tv.TvInputInfo;
 import android.media.tv.TvInputManager;
@@ -104,6 +109,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private TextView heroName;
     private int ambientColor = -1;
     private ValueAnimator ambientAnimator;
+    private Skin skin;
     private boolean heroShown;
     private boolean animations;
     private boolean advancedEffects;
@@ -257,6 +263,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         sourcePanelService = cfg.sourcePanelService;
         sourcePanelAction = cfg.sourcePanelAction;
 
+        skin = cfg.skin;
         root = findViewById(R.id.root);
         root.setBackgroundColor(cfg.backgroundColor);
         if (cfg.wallpaper != null) showWallpaper(cfg.wallpaper);
@@ -288,6 +295,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         vpnApp = cfg.vpnApp;
         moduleCards = cfg.moduleCards;
         hiddenApps = new HashSet<>(cfg.hiddenApps);
+        applySkin();
 
         grid = findViewById(R.id.grid);
         rtlAppGrid = getResources().getBoolean(R.bool.rtl_app_grid);
@@ -348,7 +356,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             public void onChildViewDetachedFromWindow(@NonNull View v) {
             }
         });
-        if (dockRow) grid.addItemDecoration(new DockDecoration(COLUMNS, density));
+        if (dockRow) grid.addItemDecoration(new DockDecoration(COLUMNS, density, skin));
         if (animations) {
             int enterAnim = reducedMotion ? R.anim.tile_enter_reduced : R.anim.tile_enter;
             float enterDelay = reducedMotion ? 0f : 0.06f;
@@ -942,38 +950,41 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         Rect r = new Rect(0, 0, card.getWidth(), card.getHeight());
         root.offsetDescendantRectToMyCoords(card, r);
         float pad = 6f * density;        // matches GlassView's glow inset
-        float scale = adapter.focusScale();
-        float w = card.getWidth() * scale + 2 * pad;
-        float h = card.getHeight() * scale + 2 * pad;
-        float x = r.exactCenterX() - w / 2f;
-        float y = r.exactCenterY() - h / 2f - (advancedEffects ? 4f * density : 0f);
+        // A skin can switch the floating slab off and let the focused tile show focus by itself.
+        if (skin.floatingHighlight) {
+            float scale = adapter.focusScale();
+            float w = card.getWidth() * scale + 2 * pad;
+            float h = card.getHeight() * scale + 2 * pad;
+            float x = r.exactCenterX() - w / 2f;
+            float y = r.exactCenterY() - h / 2f - (advancedEffects ? 4f * density : 0f);
 
-        ViewGroup.LayoutParams lp = glass.getLayoutParams();
-        if (lp.width != (int) w || lp.height != (int) h) {
-            lp.width = (int) w;
-            lp.height = (int) h;
-            glass.setLayoutParams(lp);
-            // GlassView draws its slab inset by pad, i.e. exactly over the zoomed tile: same corners as the tile.
-            glass.setRadius(AppAdapter.cornerRadius(card.getWidth(), density) * scale);
-        }
-        glassTargetX = x;
-        glassTargetY = y;
-        if (!glassShown) {
-            springX.cancel();
-            springY.cancel();
-            glass.setTranslationX(x);
-            glass.setTranslationY(y);
-            if (animations) glass.animate().alpha(1f).setDuration(reducedMotion ? 100 : 180).start();
-            else glass.setAlpha(1f);
-            glassShown = true;
-        } else if (!animations) {
-            springX.cancel();
-            springY.cancel();
-            glass.setTranslationX(x);
-            glass.setTranslationY(y);
-        } else {
-            springX.animateToFinalPosition(x);
-            springY.animateToFinalPosition(y - glassScrollShift);
+            ViewGroup.LayoutParams lp = glass.getLayoutParams();
+            if (lp.width != (int) w || lp.height != (int) h) {
+                lp.width = (int) w;
+                lp.height = (int) h;
+                glass.setLayoutParams(lp);
+                // GlassView draws its slab inset by pad, i.e. exactly over the zoomed tile: same corners as the tile.
+                glass.setRadius(AppAdapter.cornerRadius(card.getWidth(), density, skin.cornerScale) * scale);
+            }
+            glassTargetX = x;
+            glassTargetY = y;
+            if (!glassShown) {
+                springX.cancel();
+                springY.cancel();
+                glass.setTranslationX(x);
+                glass.setTranslationY(y);
+                if (animations) glass.animate().alpha(1f).setDuration(reducedMotion ? 100 : 180).start();
+                else glass.setAlpha(1f);
+                glassShown = true;
+            } else if (!animations) {
+                springX.cancel();
+                springY.cancel();
+                glass.setTranslationX(x);
+                glass.setTranslationY(y);
+            } else {
+                springX.animateToFinalPosition(x);
+                springY.animateToFinalPosition(y - glassScrollShift);
+            }
         }
         View item = (View) card.getParent();
         if (dockRow && position < COLUMNS) {
@@ -1002,7 +1013,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     private void showHero(int position, float dockTopInRoot) {
         String label = adapter.labelAt(position);
-        int color = adapter.ambientColorAt(position);
+        int color = skin.fixedAmbient != 0 ? skin.fixedAmbient : adapter.ambientColorAt(position);
         float y = dockTopInRoot - 14 * density - 26 * density - heroName.getHeight();
         boolean changed = !label.contentEquals(heroName.getText());
 
@@ -1057,6 +1068,99 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         } else {
             heroName.setY(y);
         }
+    }
+
+    // ---- skin ------------------------------------------------------------------------------------
+
+    /**
+     * Paints the launcher in the colours, font and corners of {@link Config#skin}. The default skin
+     * sets nothing, so the layout and drawables stay exactly as written; a skin that fills a field in
+     * overrides just that one. Called once, before the adapter exists.
+     */
+    private void applySkin() {
+        if (Skin.DEFAULT.equals(skin.name)) return;
+
+        Typeface font = skin.fontRes != 0 ? getResources().getFont(skin.fontRes) : null;
+        TextView clock = findViewById(R.id.clock);
+        TextView ampm = findViewById(R.id.ampm);
+        TextView date = findViewById(R.id.date);
+        View divider = findViewById(R.id.divider);
+        TextView[] pills = {findViewById(R.id.btnInputs), findViewById(R.id.btnWifi), findViewById(R.id.btnSettings)};
+
+        if (font != null) {
+            for (TextView t : new TextView[]{greeting, clock, ampm, date, heroName, shamsiDate}) t.setTypeface(font);
+            for (TextView t : pills) t.setTypeface(font);
+        }
+        if (skin.greetingColor != 0) greeting.setTextColor(skin.greetingColor);
+        if (skin.clockColor != 0) clock.setTextColor(skin.clockColor);
+        if (skin.ampmColor != 0) ampm.setTextColor(skin.ampmColor);
+        if (skin.dateColor != 0) {
+            date.setTextColor(skin.dateColor);
+            shamsiDate.setTextColor(skin.dateColor);
+        }
+        if (skin.dividerColor != 0) divider.setBackgroundColor(skin.dividerColor);
+        if (skin.heroColor != 0) heroName.setTextColor(skin.heroColor);
+
+        if (skin.pillText != 0) {
+            ColorStateList text = new ColorStateList(
+                    new int[][]{{android.R.attr.state_focused}, {}},
+                    new int[]{skin.pillTextFocused, skin.pillText});
+            for (TextView t : pills) {
+                t.setBackground(pillBackground());
+                t.setTextColor(text);
+                t.setCompoundDrawableTintList(text);
+            }
+        }
+
+        if (skin.floatingHighlight) {
+            glass.setSkin(skin);
+        } else {
+            glass.setVisibility(View.GONE);
+        }
+
+        if (skin.scanlines) {
+            View overlay = findViewById(R.id.overlay);
+            GradientDrawable vignette = new GradientDrawable();
+            vignette.setGradientType(GradientDrawable.RADIAL_GRADIENT);
+            vignette.setGradientCenter(0.5f, 0.45f);
+            vignette.setColors(new int[]{0x00000000, 0x00000000, 0xB3000000});
+            overlay.setBackground(new LayerDrawable(new Drawable[]{scanlines(), vignette}));
+            overlay.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) ->
+                    vignette.setGradientRadius((r - l) * 0.62f));
+            overlay.setVisibility(View.VISIBLE);
+        }
+    }
+
+    /** The pill: a thin stroked box, filled solid when focused. */
+    private StateListDrawable pillBackground() {
+        float radius = 21 * density * skin.cornerScale;
+        GradientDrawable focused = new GradientDrawable();
+        focused.setColor(skin.pillFillFocused);
+        focused.setCornerRadius(radius);
+        GradientDrawable rest = new GradientDrawable();
+        rest.setColor(skin.pillFill);
+        rest.setStroke(Math.max(1, Math.round(density)), skin.pillStroke);
+        rest.setCornerRadius(radius);
+        StateListDrawable out = new StateListDrawable();
+        out.addState(new int[]{android.R.attr.state_focused}, focused);
+        out.addState(new int[]{}, rest);
+        return out;
+    }
+
+    /**
+     * CRT scan lines: a four-pixel-tall bitmap tiled over the screen, two rows clear and two dark.
+     * DENSITY_NONE keeps it at one bitmap pixel per screen pixel instead of being scaled up.
+     */
+    private Drawable scanlines() {
+        Bitmap bm = Bitmap.createBitmap(1, 4, Bitmap.Config.ARGB_8888);
+        bm.setPixel(0, 0, 0x00000000);
+        bm.setPixel(0, 1, 0x00000000);
+        bm.setPixel(0, 2, 0x4D000000);
+        bm.setPixel(0, 3, 0x4D000000);
+        bm.setDensity(Bitmap.DENSITY_NONE);
+        BitmapDrawable d = new BitmapDrawable(getResources(), bm);
+        d.setTileModeXY(Shader.TileMode.REPEAT, Shader.TileMode.REPEAT);
+        return d;
     }
 
     /**

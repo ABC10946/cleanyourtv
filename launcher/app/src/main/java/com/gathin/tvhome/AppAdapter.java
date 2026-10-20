@@ -11,9 +11,17 @@ import android.content.res.Resources;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.ColorMatrix;
+import android.graphics.ColorMatrixColorFilter;
 import android.graphics.Outline;
 import android.graphics.Rect;
+import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.StateListDrawable;
+import android.content.res.ColorStateList;
+import android.view.Gravity;
+import android.widget.FrameLayout;
 import android.net.Uri;
 import android.provider.Settings;
 import android.util.DisplayMetrics;
@@ -189,6 +197,10 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private final boolean showHomeSettings;
     /** Calmer motion for weak GPUs (config.xml, reduced_motion): no overshoot, shorter fades. */
     private final boolean reducedMotion;
+    private final Skin skin;
+    /** Desaturate-then-tint filter for the phosphor skin, built once; null leaves banners in colour. */
+    private final ColorMatrixColorFilter monoFilter;
+    private final Typeface skinFont;
     private final List<Entry> items = new ArrayList<>();
 
     AppAdapter(Context ctx, TileListener listener, int dockSize, Config cfg) {
@@ -206,6 +218,9 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         this.rowsBelowDock = cfg.rowsBelowDock;
         this.dockTitle = cfg.dockTitle;
         this.dockRow = cfg.dockRow;
+        this.skin = cfg.skin;
+        this.monoFilter = skin.monochrome != 0 ? tintFilter(skin.monochrome) : null;
+        this.skinFont = skin.fontRes != 0 ? ctx.getResources().getFont(skin.fontRes) : null;
         // Tiles keep their identity across reload(), so a focused tile stays on its app instead of
         // its view being rebound to whatever app now sits in that slot.
         setHasStableIds(true);
@@ -344,7 +359,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             v.setPadding(v.getPaddingLeft(), pad, v.getPaddingRight(), pad);
         }
         name.setLayoutParams(nameLp);
-        return new Holder(v, listener, animations, advancedEffects, reducedMotion);
+        return new Holder(v, listener, animations, advancedEffects, reducedMotion, skin, skinFont);
     }
 
     @Override
@@ -375,7 +390,16 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         h.card.setTranslationZ(focused && advancedEffects ? 8f * ctx.getResources().getDisplayMetrics().density : 0f);
         h.banner.setScaleX(focused && advancedEffects ? 1.035f : 1f);
         h.banner.setScaleY(focused && advancedEffects ? 1.035f : 1f);
-        if (e.banner != null) {
+        h.banner.setColorFilter(monoFilter);
+        if (skin.textTiles) {
+            // A text-tile skin names the app inside the tile, so the label under it would say it twice.
+            h.name.setVisibility(View.INVISIBLE);
+            h.banner.setImageDrawable(null);
+            h.banner.setVisibility(View.GONE);
+            h.icon.setVisibility(View.GONE);
+            h.label.setText(e.label);
+            h.label.setVisibility(View.VISIBLE);
+        } else if (e.banner != null) {
             h.banner.setImageDrawable(e.banner);
             h.banner.setVisibility(View.VISIBLE);
             h.icon.setVisibility(View.GONE);
@@ -570,7 +594,33 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     /** Corner radius for a tile of this width: 16dp at the design width, proportionally less when smaller. */
     static float cornerRadius(int tileWidthPx, float density) {
-        return 16f * density * Math.min(1f, tileWidthPx / (DESIGN_W_DP * density));
+        return cornerRadius(tileWidthPx, density, 1f);
+    }
+
+    /** The same radius, flattened by a skin's cornerScale (0 squares the tile off). */
+    static float cornerRadius(int tileWidthPx, float density, float cornerScale) {
+        return 16f * density * Math.min(1f, tileWidthPx / (DESIGN_W_DP * density)) * cornerScale;
+    }
+
+    /** One tile background: a flat fill with an optional hairline border. */
+    private static GradientDrawable tileShape(int fill, int stroke, float density) {
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(fill != 0 ? fill : 0xFF1C1C1E);
+        if (stroke != 0) d.setStroke(Math.max(1, Math.round(density)), stroke);
+        return d;
+    }
+
+    /** Flattens a drawable to greys and multiplies them by one colour, for a monochrome skin. */
+    private static ColorMatrixColorFilter tintFilter(int color) {
+        ColorMatrix m = new ColorMatrix();
+        m.setSaturation(0f);
+        float r = Color.red(color) / 255f, g = Color.green(color) / 255f, b = Color.blue(color) / 255f;
+        m.postConcat(new ColorMatrix(new float[]{
+                r, 0, 0, 0, 0,
+                0, g, 0, 0, 0,
+                0, 0, b, 0, 0,
+                0, 0, 0, 1, 0}));
+        return new ColorMatrixColorFilter(m);
     }
 
     static final class Holder extends RecyclerView.ViewHolder {
@@ -584,7 +634,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         final boolean reducedMotion;
 
         Holder(View v, TileListener listener, boolean animations, boolean advancedEffects,
-               boolean reducedMotion) {
+               boolean reducedMotion, Skin skin, Typeface font) {
             super(v);
             card = v.findViewById(R.id.card);
             banner = v.findViewById(R.id.banner);
@@ -596,11 +646,59 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             this.reducedMotion = reducedMotion;
 
             final float density = v.getResources().getDisplayMetrics().density;
+            final float cornerScale = skin.cornerScale;
+            if (font != null) {
+                label.setTypeface(font);
+                name.setTypeface(font);
+            }
+            if (skin.tileLabelColor != 0) {
+                name.setTextColor(skin.tileLabelColor);
+                if (skin.tileTextFocused != 0) {
+                    // The card is what takes focus, not the label; item_app.xml gives the label
+                    // duplicateParentState so state_focused in this list actually matches.
+                    label.setTextColor(new ColorStateList(
+                            new int[][]{{android.R.attr.state_focused}, {}},
+                            new int[]{skin.tileTextFocused, skin.tileLabelColor}));
+                } else {
+                    label.setTextColor(ColorStateList.valueOf(skin.tileLabelColor));
+                }
+            }
+            if (skin.textTiles) {
+                // Centre the name in the tile; by default it sits at the bottom, under the icon.
+                FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) label.getLayoutParams();
+                lp.gravity = Gravity.CENTER;
+                label.setLayoutParams(lp);
+                int pad = Math.round(10 * density);
+                label.setPadding(pad, pad, pad, pad);
+                label.setSingleLine(false);
+                label.setMaxLines(2);
+                if (skin.tileTextSp > 0) label.setTextSize(skin.tileTextSp);
+                label.setAllCaps(skin.tileTextAllCaps);
+            }
+            if (skin.tileFill != 0 || skin.tileStroke != 0) {
+                final GradientDrawable rest = tileShape(skin.tileFill, skin.tileStroke, density);
+                final GradientDrawable focus = skin.tileFillFocused != 0
+                        ? tileShape(skin.tileFillFocused, skin.tileStrokeFocused, density) : null;
+                if (focus != null) {
+                    StateListDrawable states = new StateListDrawable();
+                    states.addState(new int[]{android.R.attr.state_focused}, focus);
+                    states.addState(new int[]{}, rest);
+                    card.setBackground(states);
+                } else {
+                    card.setBackground(rest);
+                }
+                card.addOnLayoutChangeListener((view, l, t, r, b, ol, ot, or2, ob) -> {
+                    float radius = cornerRadius(view.getWidth(), density, cornerScale);
+                    rest.setCornerRadius(radius);
+                    if (focus != null) focus.setCornerRadius(radius);
+                });
+            }
             card.setOutlineProvider(new ViewOutlineProvider() {
                 @Override
                 public void getOutline(View view, Outline outline) {
                     // 16dp at the design width, scaled down with the tile so small tiles keep the same shape.
-                    outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), cornerRadius(view.getWidth(), density));
+                    outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(),
+                            cornerRadius(view.getWidth(), density, cornerScale));
                 }
             });
             card.setClipToOutline(true);

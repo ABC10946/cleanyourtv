@@ -14,17 +14,19 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
 
     private final int dockSize;
     private final float density;
+    private final float cornerScale;
     private final Paint band = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint edge = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF rect = new RectF();
 
-    DockDecoration(int dockSize, float density) {
+    DockDecoration(int dockSize, float density, Skin skin) {
         this.dockSize = dockSize;
         this.density = density;
-        band.setColor(0xFF141416);
+        this.cornerScale = skin.cornerScale;
+        band.setColor(skin.dockBand != 0 ? skin.dockBand : 0xFF141416);
         edge.setStyle(Paint.Style.STROKE);
         edge.setStrokeWidth(density);
-        edge.setColor(0x1FFFFFFF);
+        edge.setColor(skin.dockEdge != 0 ? skin.dockEdge : 0x1FFFFFFF);
     }
 
     @Override
@@ -60,7 +62,7 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
         if (!any) return;
         float pad = 14 * density;
         rect.inset(-pad, -pad);
-        float radius = 26 * density;
+        float radius = 26 * density * cornerScale;
         c.drawRoundRect(rect, radius, radius, band);
         c.drawRoundRect(rect, radius, radius, edge);
     }

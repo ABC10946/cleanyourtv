@@ -26,6 +26,11 @@ public class GlassView extends View {
     private int glowRgb = 0xFFFFFF;
     /** Glow strength: the white glow stays faint, a coloured one needs more alpha to read as warm light. */
     private int glowAlpha = 0x30;
+    // Skin colours; the defaults are the white glass the launcher ships with.
+    private int fillTop = 0x3DFFFFFF, fillBottom = 0x12FFFFFF;
+    private int specularColor = 0x66FFFFFF, rimColor = 0xCCFFFFFF;
+    /** The skin's glow, kept apart from glowRgb so setAccent(0) can put it back after a festival. */
+    private int skinGlowRgb = 0xFFFFFF;
 
     public GlassView(Context context, AttributeSet attrs) {
         super(context, attrs);
@@ -33,7 +38,7 @@ public class GlassView extends View {
         radius = 20f * density;
         rim.setStyle(Paint.Style.STROKE);
         rim.setStrokeWidth(1.5f * density);
-        rim.setColor(0xCCFFFFFF);
+        rim.setColor(rimColor);
         glow.setStyle(Paint.Style.STROKE);
         // Cache the slab as a texture. The spring only changes translation, so the GPU can
         // move it without replaying clipPath and the glow on every frame. That path is
@@ -44,9 +49,9 @@ public class GlassView extends View {
     /** Tints the rim and the outer glow; 0 restores the plain white glass. */
     void setAccent(int argb) {
         if (argb == 0) {
-            glowRgb = 0xFFFFFF;
+            glowRgb = skinGlowRgb;
             glowAlpha = 0x30;
-            rim.setColor(0xCCFFFFFF);
+            rim.setColor(rimColor);
         } else {
             glowRgb = argb & 0xFFFFFF;
             glowAlpha = 0x70;
@@ -58,6 +63,19 @@ public class GlassView extends View {
         invalidate();
     }
 
+    /** Recolours the slab for a skin; 0 in a skin field keeps the built-in white. */
+    void setSkin(Skin skin) {
+        if (skin.glassFillTop != 0) fillTop = skin.glassFillTop;
+        if (skin.glassFillBottom != 0) fillBottom = skin.glassFillBottom;
+        if (skin.glassSpecular != 0) specularColor = skin.glassSpecular;
+        if (skin.glassRim != 0) rimColor = skin.glassRim;
+        if (skin.glassGlow != 0) skinGlowRgb = skin.glassGlow & 0xFFFFFF;
+        glowRgb = skinGlowRgb;
+        rim.setColor(rimColor);
+        if (getWidth() > 0 && getHeight() > 0) onSizeChanged(getWidth(), getHeight(), 0, 0);
+        invalidate();
+    }
+
     void setRadius(float px) {
         radius = px;
         invalidate();
@@ -66,8 +84,9 @@ public class GlassView extends View {
     @Override
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
-        fill.setShader(new LinearGradient(0, 0, 0, h, 0x3DFFFFFF, 0x12FFFFFF, Shader.TileMode.CLAMP));
-        specular.setShader(new LinearGradient(0, 0, 0, h * 0.45f, 0x66FFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP));
+        fill.setShader(new LinearGradient(0, 0, 0, h, fillTop, fillBottom, Shader.TileMode.CLAMP));
+        specular.setShader(new LinearGradient(0, 0, 0, h * 0.45f,
+                specularColor, specularColor & 0x00FFFFFF, Shader.TileMode.CLAMP));
     }
 
     @Override
